@@ -1,18 +1,10 @@
-
-
 import { loadPyodide } from
     "https://cdn.jsdelivr.net/pyodide/v314.0.7/full/pyodide.mjs";
 
 import * as THREE from
     "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js";
 
-
 const status = document.getElementById("status");
-
-
-// ------------------------------------------------------------
-// Three.js renderer
-// ------------------------------------------------------------
 
 const canvas = document.getElementById("game");
 
@@ -25,123 +17,212 @@ renderer.setPixelRatio(window.devicePixelRatio);
 renderer.setSize(window.innerWidth, window.innerHeight);
 
 
-// ------------------------------------------------------------
-// Three.js scene and camera
-// ------------------------------------------------------------
-
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x202020);
 
+// Add lighting, else all is black
+const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
+scene.add(ambientLight);
+
+const directionalLight = new THREE.DirectionalLight(0xffffff, 2);
+directionalLight.position.set(1000, 2000, 3000);
+scene.add(directionalLight);
+
+
+
+// Camera, not convention for view angle vs x,y,z convention from python
 const camera = new THREE.PerspectiveCamera(
     60,
     window.innerWidth / window.innerHeight,
     0.1,
-    100
+    100000
 );
 
-camera.position.set(0, 0, 5);
+// Position in geometry of the "world", which carries units in mm
+camera.position.set(2000, 2000, 2000);
+camera.up.set(0, 0, 1);     // z is "up"
+camera.lookAt(0, 0, 0);
 
 
-// ------------------------------------------------------------
-// Renderer-side object collection
-// ------------------------------------------------------------
-
+// Map from Python render ID to Three.js object.
 const renderObjects = new Map();
 
 
-// ------------------------------------------------------------
-// Geometry/material definitions
-// ------------------------------------------------------------
+function createRenderObject(geometryData, styleData) {
 
-const geometries = {
-    cube: new THREE.BoxGeometry(2, 2, 2)
-};
+    const geometry = new THREE.BufferGeometry();
 
-const materials = {
-    cube: new THREE.MeshNormalMaterial()
-};
+    const points = geometryData.points;
+    const faces = geometryData.faces;
 
+    // Convert vertices to a flat Float32Array.
+    const positions = new Float32Array(points.length * 3);
 
-// ------------------------------------------------------------
-// Create a Three.js object for a Python render object
-// ------------------------------------------------------------
-
-function createRenderObject(geometryName) {
-    const geometry = geometries[geometryName];
-    const material = materials[geometryName];
-
-    if (!geometry || !material) {
-        throw new Error(
-            `Unknown geometry: ${geometryName}`
-        );
+    for (let i = 0; i < points.length; i++) {
+        positions[3 * i + 0] = points[i][0];
+        positions[3 * i + 1] = points[i][1];
+        positions[3 * i + 2] = points[i][2];
     }
+
+    geometry.setAttribute(
+        "position",
+        new THREE.BufferAttribute(positions, 3)
+    );
+
+
+    // Convert polygon faces to triangles.
+    //
+    // For now use a simple triangle fan:
+    //
+    // [0, 1, 2, 3] -> [0,1,2], [0,2,3]
+    //
+    // This is appropriate for the simple planar/convex
+    // geometry currently being generated.
+
+    const indices = [];
+
+    for (const face of faces) {
+
+        if (face.length < 3) {
+            continue;
+        }
+
+        for (let i = 1; i < face.length - 1; i++) {
+            indices.push(
+                face[0],
+                face[i],
+                face[i + 1]
+            );
+        }
+    }
+
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+
+
+    console.log("style:", styleData);
+    console.log("face colour:", styleData.face_color);
+
+    const color = styleData.face_color;
+
+    const material = new THREE.MeshStandardMaterial({
+        color: new THREE.Color(
+            color[0] / 255,
+            color[1] / 255,
+            color[2] / 255
+        ),
+        transparent: styleData.alpha < 1.0,
+        opacity: styleData.alpha,
+        side: THREE.DoubleSide
+        
+    });
+
 
     return new THREE.Mesh(geometry, material);
 }
 
 
-// ------------------------------------------------------------
-// Synchronize Three.js objects with Python world objects
-// ------------------------------------------------------------
-
 function updateRenderObjects(objects) {
+
     const activeIds = new Set();
 
+
     for (const object of objects) {
-        const id       = object[0];
+
+        const id = object[0];
         const geometry = object[1];
-
-        const px = object[2];
-        const py = object[3];
-        const pz = object[4];
-
-        const rx = object[5];
-        const ry = object[6];
-        const rz = object[7];
+        const transform = object[2];
+        const style = object[3];
 
         activeIds.add(id);
 
-        // Create renderer object if it does not exist yet.
+
         let renderObject = renderObjects.get(id);
 
+
         if (!renderObject) {
-            renderObject = createRenderObject(geometry);
+
+            renderObject = createRenderObject(
+                geometry,
+                style
+            );
 
             renderObjects.set(id, renderObject);
+
             scene.add(renderObject);
         }
 
-        // Update transform.
-        renderObject.position.set(px, py, pz);
-        renderObject.rotation.set(rx, ry, rz);
+
+        // The transform is a 4x4 matrix.
+        //
+        // Pyodide converts the numpy array into a JS array-like
+        // object, so copy the values into a THREE.Matrix4.
+
+        const matrix = new THREE.Matrix4();
+
+        matrix.set(
+            transform[0][0],
+            transform[0][1],
+            transform[0][2],
+            transform[0][3],
+
+            transform[1][0],
+            transform[1][1],
+            transform[1][2],
+            transform[1][3],
+
+            transform[2][0],
+            transform[2][1],
+            transform[2][2],
+            transform[2][3],
+
+            transform[3][0],
+            transform[3][1],
+            transform[3][2],
+            transform[3][3]
+        );
+
+        renderObject.matrixAutoUpdate = false;
+        renderObject.matrix.copy(matrix);
+        renderObject.matrixWorldNeedsUpdate = true;
+
+
+        // Visibility.
+
+        renderObject.visible = style.visible;
     }
 
-    // Remove renderer objects which no longer exist in Python.
+
+    // Remove objects which no longer exist in Python.
+
     for (const [id, renderObject] of renderObjects) {
+
         if (!activeIds.has(id)) {
+
             scene.remove(renderObject);
+
+            renderObject.geometry.dispose();
+
+            if (renderObject.material) {
+                renderObject.material.dispose();
+            }
+
             renderObjects.delete(id);
         }
     }
 }
 
 
-// ------------------------------------------------------------
-// Start Python / Pyodide
-// ------------------------------------------------------------
-
 status.textContent = "Loading Python...";
 
 const pyodide = await loadPyodide();
+await pyodide.loadPackage("numpy")
 
 status.textContent = "Starting game...";
 
 
-// ------------------------------------------------------------
-// Load Python game files into Pyodide
-// ------------------------------------------------------------
-
 pyodide.FS.mkdir("/game");
+
 
 const pythonFiles = [
     "game/__init__.py",
@@ -149,8 +230,13 @@ const pythonFiles = [
     "game/state.py",
     "game/world.py",
     "game/player.py",
-    "game/physics.py"
+    "game/physics.py",
+    "game/classes.py",
+    "game/creation.py",
+    "game/primitives.py",
+    "game/translations.py"
 ];
+
 
 for (const file of pythonFiles) {
     const response = await fetch(file);
@@ -176,19 +262,15 @@ for (const file of pythonFiles) {
 }
 
 
-// ------------------------------------------------------------
-// Create the Python game
-// ------------------------------------------------------------
-
 const pythonSource = `
 import sys
-
 sys.path.insert(0, "/game")
 
 from game import Game
 
 game = Game()
 `;
+
 
 pyodide.runPython(pythonSource);
 
@@ -197,48 +279,29 @@ const game = pyodide.globals.get("game");
 status.textContent = "Running";
 
 
-// ------------------------------------------------------------
-// Animation loop
-// ------------------------------------------------------------
-
 let previousTime = performance.now();
 
+
 function frame(time) {
-    const dt = Math.min(
-        (time - previousTime) / 1000,
-        0.1
-    );
-
+    // Update/time-step state
+    const dt = Math.min( (time - previousTime) / 1000, 0.1 );
     previousTime = time;
-
-    // Update game simulation in Python.
     game.update(dt);
 
-    // Obtain render state from Python.
+    // Get the objects and render them
     const objects = game.render_state().toJs();
 
-    // Synchronize Three.js scene with Python world.
     updateRenderObjects(objects);
-
-    // Render.
-    renderer.render(scene, camera);
-
+    renderer.render( scene, camera);
     requestAnimationFrame(frame);
 }
 
 requestAnimationFrame(frame);
 
 
-// ------------------------------------------------------------
-// Handle window resizing
-// ------------------------------------------------------------
-
 window.addEventListener("resize", () => {
-    camera.aspect =
-        window.innerWidth / window.innerHeight;
-
+    camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
-
     renderer.setSize(
         window.innerWidth,
         window.innerHeight

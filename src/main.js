@@ -39,11 +39,8 @@ camera.position.set(0, 0, 5);
 
 
 // Cube
-
 const geometry = new THREE.BoxGeometry(2, 2, 2);
-
 const material = new THREE.MeshNormalMaterial();
-
 const cube = new THREE.Mesh(
     geometry,
     material
@@ -51,15 +48,12 @@ const cube = new THREE.Mesh(
 
 scene.add(cube);
 
-
 // ------------------------------------------------------------
 // Load Python
 // ------------------------------------------------------------
 
 status.textContent = "Loading Python...";
-
 const pyodide = await loadPyodide();
-
 
 // ------------------------------------------------------------
 // Load our Python game
@@ -69,11 +63,8 @@ status.textContent = "Starting game...";
 
 const pythonSource = `
 import sys
-
 sys.path.insert(0, "/game")
-
 from game import Game
-
 game = Game()
 `;
 
@@ -81,7 +72,6 @@ pyodide.FS.mkdir("/game");
 
 
 // Copy our Python files into Pyodide's virtual filesystem.
-
 const pythonFiles = [
     "game/__init__.py",
     "game/game.py",
@@ -115,56 +105,35 @@ for (const file of pythonFiles) {
     pyodide.FS.writeFile(path, text);
 }
 
-
 pyodide.runPython(pythonSource);
 
 
 // Get the Python Game object.
-
 const game = pyodide.globals.get("game");
-
 status.textContent = "Running";
-
 
 // ------------------------------------------------------------
 // Game loop
 // ------------------------------------------------------------
-
 let previousTime = performance.now();
 
-
 function frame(time) {
-
-    const dt = Math.min(
-        (time - previousTime) / 1000,
-        0.1
-    );
-
+    const dt = Math.min((time - previousTime) / 1000, 0.1);
     previousTime = time;
 
-
     // Run the Python simulation.
-
     game.update(dt);
 
 
     // Get Python render state.
-
     const objects = game.render_state().toJs();
 
-
-    // For now we only have one object.
-
     const player = objects[0];
-
-    const transform = player.get("transform");
-
-    const position = transform.get("position");
-    const rotation = transform.get("rotation");
-
+    const transform = player.transform;
+    const position = transform.position;
+    const rotation = transform.rotation;
 
     // Apply Python state to Three.js object.
-
     cube.position.set(
         position[0],
         position[1],
@@ -179,13 +148,9 @@ function frame(time) {
 
 
     // Render.
-
     renderer.render(scene, camera);
-
-
     requestAnimationFrame(frame);
 }
-
 
 requestAnimationFrame(frame);
 

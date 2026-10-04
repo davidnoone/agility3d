@@ -13,4 +13,4 @@ class Game:
         self.world.update(dt)
 
     def render_state(self):
-        return self.world.render_objects()
+        return self.world.render_state()

@@ -1,0 +1,64 @@
+# ====================================================================
+# 1. Environment Variables & Secrets (CRITICAL)
+# ====================================================================
+.env
+.env.local
+.env.*.local
+*.env
+*.pem
+*.key
+*.cert
+
+# ====================================================================
+# 2. Package Dependencies (Installed locally via package managers)
+# ====================================================================
+node_modules/
+jspm_packages/
+web_modules/
+vendor/
+.pnp/
+.pnp.js
+
+# ====================================================================
+# 3. Build Outputs, Compilations, & Caches
+# ====================================================================
+dist/
+build/
+out/
+bin/
+obj/
+*.exe
+*.dll
+*.so
+*.dylib
+*.class
+*.pyc
+.cache/
+.eslintcache
+.parcel-cache
+.turbo/
+
+# ====================================================================
+# 4. Logs, Diagnostics, & Databases
+# ====================================================================
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+*.sql
+*.sqlite
+*.db
+
+# ====================================================================
+# 5. Operating System Junk & IDEs (Better handled globally)
+# ====================================================================
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp

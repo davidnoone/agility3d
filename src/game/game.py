@@ -4,8 +4,6 @@
 # Run from the command line to see world creation summary.
 #
 #
-import os
-
 from .physics import Physics
 from .creation import create_world
 
@@ -70,7 +68,6 @@ class Game:
 
 if __name__ == "__main__":
     # DIAGNOSTICS path rint
-    print(os.listdir("/game/game"))
     print("COMMAND LINE TEST EXECUTION")
     game = Game()
 

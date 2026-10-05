@@ -42,7 +42,6 @@ def create_world(params):
     world = Element('world')
     world.add(field)
 
-
     return world
 
 
@@ -79,7 +78,11 @@ def create_table(params, filename=None, save=False):
 
     leg_mid.style.face_color = yellow_RGB   # change color of the mid leg
 
+    # Save the object as a json file
     if save:
-        table.save('table.json')
+        if filename is None:
+            filename = 'table.json'
+        print('SAVING: ',filename)
+        table.save(filename)
     return table
 

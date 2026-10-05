@@ -1,5 +1,6 @@
-class Physics:
+#!/bin/env python
 
+class Physics:
     def update(self, world, dt):
         pass
 

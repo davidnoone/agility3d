@@ -1,7 +1,7 @@
 #!/bin/env python
 
 
-from .classes import Element, Style, Geometry
+from .classes import Element, Style
 from . import primitives 
 
 
@@ -43,12 +43,14 @@ def create_world(params):
     world.add(field)
 
 
-
     return world
 
 
 
-def create_table(params):
+def create_table(params, filename=None, save=False):
+    if filename is not None:
+        table = Element.load(filename)
+        return table
 
     # Define reusable geometry
     length = params["length"]
@@ -77,5 +79,7 @@ def create_table(params):
 
     leg_mid.style.face_color = yellow_RGB   # change color of the mid leg
 
+    if save:
+        table.save('table.json')
     return table
 

@@ -71,37 +71,21 @@ function createRenderObject(geometryData, styleData) {
 
 
     // Convert polygon faces to triangles.
-    //
-    // For now use a simple triangle fan:
-    //
-    // [0, 1, 2, 3] -> [0,1,2], [0,2,3]
-    //
-    // This is appropriate for the simple planar/convex
-    // geometry currently being generated.
-
+    // Simple triangle fan: [0, 1, 2, 3] -> [0,1,2], [0,2,3]
+    // (Appropriate for the simple planar/convex geometry)
     const indices = [];
-
     for (const face of faces) {
-
         if (face.length < 3) {
             continue;
         }
 
         for (let i = 1; i < face.length - 1; i++) {
-            indices.push(
-                face[0],
-                face[i],
-                face[i + 1]
-            );
+            indices.push(face[0],face[i],face[i + 1]);
         }
     }
 
     geometry.setIndex(indices);
     geometry.computeVertexNormals();
-
-
-    console.log("style:", styleData);
-    console.log("face colour:", styleData.face_color);
 
     const color = styleData.face_color;
 
@@ -231,10 +215,11 @@ const pythonFiles = [
     "game/world.py",
     "game/player.py",
     "game/physics.py",
+    "game/translations.py",
+    "game/serializer.py",
     "game/classes.py",
-    "game/creation.py",
     "game/primitives.py",
-    "game/translations.py"
+    "game/creation.py"
 ];
 
 
@@ -246,11 +231,8 @@ for (const file of pythonFiles) {
     }
 
     const text = await response.text();
-
     const path = "/game/" + file;
-
-    const directory =
-        path.substring(0, path.lastIndexOf("/"));
+    const directory = path.substring(0, path.lastIndexOf("/"));
 
     try {
         pyodide.FS.mkdirTree(directory);

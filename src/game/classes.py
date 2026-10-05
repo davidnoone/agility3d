@@ -3,6 +3,9 @@ from dataclasses import dataclass, field
 from copy import copy
 
 from .translations import rotation_from_euler_angles
+from . import serializer as serializer
+
+
 
 @dataclass
 class Style:
@@ -159,6 +162,13 @@ class Element:
         for child in self.children:
             yield from child.walk(world_transform)
 
+    def save(self,filename):
+        serializer.save(self, filename)
+
+    @classmethod
+    def load(cls, filename):
+        return serializer.load(filename)
+
 
     def print_tree(self, verbose=False):
         """Print the Element hierarchy."""
@@ -217,6 +227,14 @@ class Element:
         _print(self)
 
 
+#=========================================
+# Once the classes are defined, they can be registered for serialization
+serializer.register_class(Style)
+serializer.register_class(Geometry)
+serializer.register_class(Element)
+
+#=======================================================
+# HELPER FUNCTIONS
 
 def transform_points(points, transform):
     """ Helper function to perform point transformations using homogeneous coordinates."""
@@ -291,3 +309,6 @@ def make_transform_matrix(position=None, orientation=None):
         T[:3, :3] = rot
 
     return T
+
+
+

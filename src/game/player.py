@@ -7,10 +7,12 @@ class Player:
 
         self.geometry = "cube"
 
+        # Location
         self.x = 0.0
         self.y = 0.0
         self.z = 0.0
 
+        # Rotation
         self.rx = 0.0
         self.ry = 0.0
         self.rz = 0.0

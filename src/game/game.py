@@ -5,6 +5,7 @@
 #
 #
 from .physics import Physics
+from .classes import BehaviourMotion
 from .creation import create_world
 
 class Game:
@@ -27,11 +28,49 @@ class Game:
         }
 
         self.world = create_world(params)
-        self.physics = Physics()
+        self.behaviours = []
+
+        self.player = self.world.find('player')     # pointer to player
+        self.player_motion = BehaviourMotion(self.player)
+
+        self.behaviours.append(self.player_motion)
+        self.physics = Physics()        # "nop" (doesn't do anything)
 
     def update(self, dt):
+        # Called once per frame
         self.physics.update(self.world, dt)
-        #self.world.update(dt)
+
+        for behaviour in self.behaviours:
+            behaviour.update(dt)
+
+
+    def set_input( self, key_left=False, key_right=False, 
+                    key_forward=False,  key_backward=False): 
+
+#        self.key_left = key_left
+#        self.key_right = key_right
+#        self.key_forward = key_forward
+#        self.key_backward = key_backward
+
+        speed = 2000.0       # mm/s
+        turn_speed = 90.0    # degrees/s
+
+        self.player_motion.u = 0.0
+        self.player_motion.v = 0.0
+        self.player_motion.omega_z = 0.0
+
+        if key_forward:
+            self.player_motion.u += speed
+
+        if key_backward:
+            self.player_motion.u -= speed
+
+        if key_left:
+            self.player_motion.omega_z += turn_speed
+
+        if key_right:
+            self.player_motion.omega_z -= turn_speed
+
 
     def render_state(self):
         """ Returns a list of all objects that canbe passed to the renderer"""
@@ -67,7 +106,6 @@ class Game:
 
 
 if __name__ == "__main__":
-    # DIAGNOSTICS path rint
     print("COMMAND LINE TEST EXECUTION")
     game = Game()
 

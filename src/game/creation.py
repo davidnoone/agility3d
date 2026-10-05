@@ -27,18 +27,22 @@ yellow_RGB = (200, 200, 50)
 def create_world(params):
     """ Work backward up the heirachical tree to construct the work """
 
-    # A table
-    table = create_table(params["table"])
-
     # Flat 2d plane environment (what units? Map to physical "mm", thus 30x40m field?
     field_length = params["field"]["length"]
     field_width = params["field"]["width"]
-
     g = primitives.geom2d(primitives.points_rectangle,x=field_length, y=field_width)
     field = Element('field',geometry=g)
-    field.add(table)
 
-    # World consructure
+    # A table
+    table = create_table(params["table"])
+    field.add(table)
+    #
+    player_length = 1000
+    player_pos = (5000,5000,100)
+    player = Element('player', geometry=primitives.cube(player_length), style=blue,)
+    field.add(player, position=player_pos,)
+
+    # World constructor
     world = Element('world')
     world.add(field)
 

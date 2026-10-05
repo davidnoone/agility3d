@@ -2,9 +2,8 @@ import numpy as np
 from dataclasses import dataclass, field
 from copy import copy
 
-from .translations import rotation_from_euler_angles
+from .translations import make_transform_matrix
 from . import serializer as serializer
-
 
 
 @dataclass
@@ -150,6 +149,14 @@ class Element:
     def remove(self, name):
         raise ValueError('Element.remove() not implemeted')
 
+    def find(self, name):
+        if self.name == name:
+            return self
+        for child in self.children:
+            result = child.find(name)
+            if result is not None:
+                return result
+        return None
 
     def walk(self, parent_transform=None):
         if parent_transform is None:
@@ -158,9 +165,9 @@ class Element:
         world_transform = parent_transform @ self.transform
 
         yield self, world_transform
-
         for child in self.children:
             yield from child.walk(world_transform)
+
 
     def save(self,filename):
         serializer.save(self, filename)
@@ -223,8 +230,41 @@ class Element:
                     prefix=child_prefix,
                     branch=child_branch,
                 )
-
         _print(self)
+
+
+
+#===========================================================
+# GROUP OF BEHAVIOURS: stpre needed metadata, and the "update" method
+class BehaviourMotion:
+    """ Holds meta data about Elements' bahavioud/motion/dynamics """
+    def __init__(self, element):
+        self.element = element
+
+        self.u = 5000.0        # mm/s, local +x (forward)
+        self.v = 0.0        # mm/s, local +y (left)
+        self.omega_z = 90.0  # degrees/s, rotation about local +z
+
+    def update(self, dt):
+        # position
+        dpos = [dt*self.u, dt*self.v, 0]    # no up/down (mm/sec)
+
+        # heading
+        dtheta = dt*self.omega_z          # Spin in x-y plane (deg/sec)
+
+        c = np.cos(np.radians(dtheta))
+        s = np.sin(np.radians(dtheta))
+
+        rot = np.array([
+            [ c, -s, 0],
+            [ s,  c, 0],
+            [ 0,  0, 1],
+        ])
+
+        dT = make_transform_matrix(position=dpos, orientation=rot)
+
+        # Apply the translation
+        self.element.transform = self.element.transform @ dT
 
 
 #=========================================
@@ -233,82 +273,6 @@ serializer.register_class(Style)
 serializer.register_class(Geometry)
 serializer.register_class(Element)
 
-#=======================================================
-# HELPER FUNCTIONS
-
-def transform_points(points, transform):
-    """ Helper function to perform point transformations using homogeneous coordinates."""
-    points = np.asarray(points, dtype=float)
-    homogeneous = np.column_stack([
-        points,
-        np.ones(len(points))
-    ])
-    transformed = (transform @ homogeneous.T).T
-    return transformed[:, :3]
-
-
-def make_transform_matrix(position=None, orientation=None):
-    """
-    Construct a 4x4 homogeneous transformation matrix.
-
-    Parameters
-    ----------
-    position : (x, y, z), optional
-        Translation in the parent's coordinate system.
-
-    orientation : (3, 3) array or (azimuth, elevation, roll), optional
-        Rotation specification.
-
-        If a 3x3 array is supplied, it is used directly as the
-        rotation matrix.
-
-        If a 3-tuple is supplied, the values are interpreted as
-        azimuth, elevation and roll angles in degrees.
-
-        Convention:
-            azimuth   = horizontal heading of local +z axis
-            elevation = upward tilt of local +z axis
-            roll      = rotation about the resulting local +z axis
-
-        Azimuth is measured from world +x toward world +y.
-
-    Returns
-    -------
-    T : (4, 4) ndarray
-        Homogeneous transformation matrix mapping local coordinates
-        into parent coordinates.
-    """
-
-    # Identity transformation
-    T = np.eye(4)
-
-    # Translation
-    if position is not None:
-        T[:3, 3] = np.asarray(position, dtype=float)
-
-    # Rotation
-    if orientation is not None:
-
-        orientation = np.asarray(orientation)
-
-        # Direct rotation-matrix form
-        if orientation.shape == (3, 3):
-            rot = orientation.astype(float)
-
-        # Euler angles: Azimuth, elevation, roll form
-        elif orientation.shape == (3,):
-            rot = rotation_from_euler_angles(orientation)
-
-        else:
-            raise ValueError(
-                "orientation must be either a 3-element "
-                "(azimuth, elevation, roll) sequence or a 3x3 "
-                "rotation matrix"
-            )
-
-        T[:3, :3] = rot
-
-    return T
 
 
 

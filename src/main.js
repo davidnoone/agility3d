@@ -1,12 +1,28 @@
+
 import { loadPyodide } from
     "https://cdn.jsdelivr.net/pyodide/v314.0.7/full/pyodide.mjs";
 
-import * as THREE from
+//import { loadPyodide } from "/js/pyodide.mjs";
+
+/*import * as THREE from
     "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js";
+
+*/
+
+
+import * as THREE from "/js/three.module.js";
 
 const status = document.getElementById("status");
 
 const canvas = document.getElementById("game");
+
+const keys = {
+    w: false,
+    a: false,
+    s: false,
+    d: false,
+};
+
 
 const renderer = new THREE.WebGLRenderer({
     canvas: canvas,
@@ -37,16 +53,16 @@ const camera = new THREE.PerspectiveCamera(
     0.1,
     100000
 );
+camera.up.set(0, 0, 1);     // z is "up"
 
 // Position in geometry of the "world", which carries units in mm
-camera.position.set(2000, 2000, 2000);
-camera.up.set(0, 0, 1);     // z is "up"
+camera.position.set(10000, 20000, 2000);
+
 camera.lookAt(0, 0, 0);
 
 
 // Map from Python render ID to Three.js object.
 const renderObjects = new Map();
-
 
 function createRenderObject(geometryData, styleData) {
 
@@ -107,9 +123,7 @@ function createRenderObject(geometryData, styleData) {
 
 
 function updateRenderObjects(objects) {
-
     const activeIds = new Set();
-
 
     for (const object of objects) {
 
@@ -170,9 +184,7 @@ function updateRenderObjects(objects) {
         renderObject.matrix.copy(matrix);
         renderObject.matrixWorldNeedsUpdate = true;
 
-
         // Visibility.
-
         renderObject.visible = style.visible;
     }
 
@@ -182,15 +194,11 @@ function updateRenderObjects(objects) {
     for (const [id, renderObject] of renderObjects) {
 
         if (!activeIds.has(id)) {
-
             scene.remove(renderObject);
-
             renderObject.geometry.dispose();
-
             if (renderObject.material) {
                 renderObject.material.dispose();
             }
-
             renderObjects.delete(id);
         }
     }
@@ -247,9 +255,7 @@ for (const file of pythonFiles) {
 const pythonSource = `
 import sys
 sys.path.insert(0, "/game")
-
 from game import Game
-
 game = Game()
 `;
 
@@ -263,12 +269,20 @@ status.textContent = "Running";
 
 let previousTime = performance.now();
 
-
 function frame(time) {
     // Update/time-step state
-    const dt = Math.min( (time - previousTime) / 1000, 0.1 );
+    const frameDt = (time - previousTime) / 1000;
+    const dtstep = Math.min(frameDt, 0.1);
+    status.textContent =
+        `Running | FPS: ${(1 / frameDt).toFixed(0)}`;
+
     previousTime = time;
-    game.update(dt);
+
+    // Pass any input to python
+    game.set_input(keys.a, keys.d, keys.w, keys.s)
+
+    // Update the simulation state
+    game.update(dtstep);
 
     // Get the objects and render them
     const objects = game.render_state().toJs();
@@ -280,6 +294,27 @@ function frame(time) {
 
 requestAnimationFrame(frame);
 
+
+
+
+//-------------------------------------
+
+window.addEventListener("keydown", (event) => {
+    const key = event.key.toLowerCase();
+    if (key in keys) {
+        keys[key] = true;
+        event.preventDefault();
+    }
+});
+
+window.addEventListener("keyup", (event) => {
+    const key = event.key.toLowerCase();
+
+    if (key in keys) {
+        keys[key] = false;
+        event.preventDefault();
+    }
+});
 
 window.addEventListener("resize", () => {
     camera.aspect = window.innerWidth / window.innerHeight;

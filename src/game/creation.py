@@ -29,20 +29,20 @@ yellow_RGB = (200, 200, 50)
 def create_world(params):
     """ Work backward up the heirachical tree to construct the work """
 
-    # Flat 2d plane environment (what units? Map to physical "mm", thus 30x40m field?
-    field_length = params["field"]["length"]
-    field_width = params["field"]["width"]
-    g = primitives.geom2d(primitives.points_rectangle,x=field_length, y=field_width)
-    field = Element('field',geometry=g)
+    # Flat 2d plane environment (what units? Map to physical "mm", thus 30x40m arena?
+    arena_length = params["arena"]["length"]
+    arena_width = params["arena"]["width"]
+    g = primitives.geom2d(primitives.points_rectangle,x=arena_length, y=arena_width)
+    arena = Element('arena',geometry=g)
 
     # A table: 
     table = create_table(params["table"])
-    field.add(table,position=(2000,2000,0))
+    arena.add(table,position=(2000,2000,0))
     #
 
     # A dog from skeleton constructor
     dog = create_dog()
-    field.add(dog, position=(6000,6000,1000),)
+    arena.add(dog, position=(6000,6000,1000),)
 
 
     # Make a player
@@ -50,12 +50,12 @@ def create_world(params):
 #    player = Element('player', geometry=primitives.cube(player_length), style=blue,)
     player = create_dog()
     player.name='player'
-    field.add(player, position=(8000,8000,2000))
+    arena.add(player, position=(8000,8000,2000))
 
 
     # World constructor
     world = Element('world')
-    world.add(field)
+    world.add(arena)
 
     return world
 

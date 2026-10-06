@@ -13,7 +13,7 @@ class Game:
 
         # Set parameters (get this from yaml later, and pass in)
         params = {
-            "field": {
+            "arena": {
                 "length": 30_000,
                 "width": 40_000,
             },

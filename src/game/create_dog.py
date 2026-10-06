@@ -1,7 +1,7 @@
 #
 # dog.py
 #
-# Simple skeletal dog model.
+# "Simple" parametric skeletal dog model.
 #
 # The skeleton is a graph of:
 #
@@ -12,439 +12,467 @@
 # For the initial renderer representation, every Beam is
 # converted to a cylinder Element.
 #
-# Later, Skeleton can be animated independently of rendering.
-#
 import numpy as np
-from .classes import  Skeleton
+
+
+from dataclasses import dataclass
+from typing import Optional
+
+from .classes import Element
+from .primitives import cylinder
+from .translations import make_transform_matrix
+import yaml
+
+# ----------------------------------------------------------------------
+# JOINT
+# ----------------------------------------------------------------------
+# ----------------------------------------------------------------------
+# JOINT
+# ----------------------------------------------------------------------
+
+@dataclass
+class Joint:
+    """
+    A named node in the skeleton graph.
+
+    A Joint has no position.
+    Position belongs to a Pose.
+    """
+    name: str
+
+
+# ----------------------------------------------------------------------
+# BONE
+# ----------------------------------------------------------------------
+
+@dataclass
+class Bone:
+    """
+    An immutable anatomical connection between two joints.
+    """
+    name: str
+    parent: Joint
+    child: Joint
+    length: float
+    radius: float
+
+
+    def to_element(self, p0, p1):
+
+        p0 = np.asarray(p0, dtype=float)
+        p1 = np.asarray(p1, dtype=float)
+
+        d = p1 - p0
+        length = np.linalg.norm(d)
+
+        if not np.isclose(length, self.length):
+            raise ValueError(
+                f"Bone '{self.name}' has pose length {length:g}, "
+                f"but skeleton length is {self.length:g}"
+            )
+
+        # Local +Z axis in world coordinates.
+        z = d / length
+
+        # Choose a reference vector that is not parallel to z.
+        reference = np.array([0.0, 0.0, 1.0])
+
+        if abs(np.dot(z, reference)) > 0.99:
+            reference = np.array([1.0, 0.0, 0.0])
+
+        # Construct local X and Y axes in world coordinates.
+        x = np.cross(reference, z)
+        x /= np.linalg.norm(x)
+
+        y = np.cross(z, x)
+
+        # Columns are the world directions of local X, Y, Z.
+        rotation = np.column_stack((x, y, z))
+
+        geometry = cylinder(self.radius, length)
+
+        T = make_transform_matrix(
+            position=p0,
+            orientation=rotation
+        )
+
+        return Element(
+            self.name,
+            geometry=geometry,
+            transform=T
+        )
+
+
+# ----------------------------------------------------------------------
+# SKELETON
+# ----------------------------------------------------------------------
+
+class Skeleton:
+
+    def __init__(self, name="skeleton"):
+        self.name = name
+        self.joints = {}
+        self.bones = {}
+
+    def add_joint(self, name):
+        if name in self.joints:
+            raise ValueError(f"Joint already exists: {name}")
+
+        joint = Joint(name)
+        self.joints[name] = joint
+        return joint
+
+    def add_bone(self, name, parent, child, length, radius):
+        if name in self.bones:
+            raise ValueError(f"Bone already exists: {name}")
+        if parent not in self.joints:
+            raise ValueError(f"Parent joint does not exist: {parent}")
+        if child not in self.joints:
+            raise ValueError(f"Child joint does not exist: {child}")
+        if length is None:
+            raise ValueError(f"Bone '{name}' has no length")
+        if length <= 0:
+            raise ValueError(f"Bone '{name}' has invalid length: {length}")
+
+        bone = Bone(
+            name=name,
+            parent=self.joints[parent],
+            child=self.joints[child],
+            length=float(length),
+            radius=radius
+        )
+
+        self.bones[name] = bone
+
+        return bone
+
+    def __call__(self, pose):
+        return self.to_element(pose)
+
+    def to_element(self, pose):
+        root = Element(self.name)
+        for bone in self.bones.values():
+            p0 = pose.position(bone.parent.name)
+            p1 = pose.position(bone.child.name)
+            element = bone.to_element(p0, p1)
+            root.add(element)
+        return root
+
+    # ------------------------------------------------------------------
+    # Access
+    # ------------------------------------------------------------------
+
+    def joint(self, name):
+        return self.joints[name]
+
+    def bone(self, name):
+        return self.bones[name]
+
+    def bone_between(self, parent, child):
+        # Accept either Joint objects or joint names.
+        if isinstance(parent, str):
+            parent = self.joint(parent)
+
+        if isinstance(child, str):
+            child = self.joint(child)
+
+        for bone in self.bones.values():
+
+            if bone.parent is parent and bone.child is child:
+                return bone
+
+        raise ValueError(
+            f"No bone between '{parent.name}' and '{child.name}'"
+        )
+
+    # ------------------------------------------------------------------
+    # Display
+    # ------------------------------------------------------------------
+
+    def print_graph(self):
+
+        print("Skeleton")
+        print("--------")
+
+        print(f"\nJoints: {len(self.joints)}")
+
+        for joint in self.joints.values():
+            print(f"  {joint.name}")
+
+        print(f"\nBones: {len(self.bones)}")
+
+        for bone in self.bones.values():
+            print(
+                f"  {bone.name}: "
+                f"{bone.parent.name} -> "
+                f"{bone.child.name} "
+                f"({bone.length:g})"
+            )
+
+
+# ----------------------------------------------------------------------
+# POSE
+# ----------------------------------------------------------------------
+
+class Pose:
+    def __init__(self, skeleton, name=None):
+        self.skeleton = skeleton
+        self.name = name
+
+        # Calculated world positions of joints.
+        self.positions = {}
+
+        # Original pose parameters.
+        self.parameters = {}
+
+    def set_position(self, name, position):
+        if name not in self.skeleton.joints:
+            raise ValueError(f"Unknown joint: {name}")
+        self.positions[name] = np.asarray(position, dtype=float)
+
+    def position(self, name):
+        print("Pose.position:",name)
+        if name not in self.positions:
+            raise ValueError( f"Position of joint '{name}' has not been set" )
+
+        return self.positions[name]
+
+    def set_parameter(self, name, value):
+        self.parameters[name] = value
+
+    def set_offset(self, parent, child, axis, value, sign=1):
+        bone = self.skeleton.bone_between(parent, child)
+        value = float(value)
+
+        if abs(value) > bone.length:
+            raise ValueError(
+                f"{child}: offset {value:g} exceeds "
+                f"bone length {bone.length:g}"
+            )
+
+        other = np.sqrt(bone.length**2 - value**2)
+
+        d = np.zeros(3)
+        if axis == "y":
+            d[1] = value
+            d[2] = sign * other
+
+        elif axis == "z":
+            d[2] = value
+            d[1] = sign * other
+
+        else:
+            raise ValueError(
+                f"Unsupported axis '{axis}'"
+            )
+
+        self.set_position( child,self.position(parent) + d)
+
+    def validate(self):
+        missing = [
+            name
+            for name in self.skeleton.joints
+            if name not in self.positions
+        ]
+        if missing:
+            raise ValueError(f"Pose '{self.name}' is missing joints: {missing}" )
 
 # ======================================================================
-# DOG - fuly parametric
+# DOG - fully parametric
 # ======================================================================
-def create_dog():
+def create_dog(filename=None):
+
+    filename = '/game/assets/config_dog.yaml' if filename is None else filename
+    with open(filename, 'r') as file:
+        p = yaml.safe_load(file)['dog']['skeleton']
 
     skeleton = Skeleton("dog")
 
-    # ==================================================================
-    # DOG SKELETON
-    #
-    # Coordinate system:
-    #
-    #     x = left / right
-    #     y = front / rear
-    #     z = up
-    #
-    #     +y = front of dog
-    #     -y = rear of dog
-    #
-    # All dimensions are in mm.
-    #
-    #
-    #                              o nose
-    #                             /
-    #                       o head
-    #                      /     \
-    #                     /       o chin
-    #                    /
-    #                   o axis
-    #                   |
-    #                   | neck_upper
-    #                   |
-    #                   o WITHERS
-    #                   |
-    #                   | thoracic
-    #                   |
-    #                   o ribbase
-    #                   |
-    #                   | upper_lumbar
-    #                   |
-    #                   o lumbar
-    #                   |
-    #                   | lower_lumbar
-    #                   |
-    #                   o pelvis
-    #                  / \
-    #                 /   \
-    #
-    # REAR LEG
-    #
-    #                o hip
-    #                 \
-    #                  o stifle
-    #                   \
-    #                    o hock
-    #                     \
-    #                      o paw
-    #                       \
-    #                        o tow
-    #
-    #
-    # FRONT LEG
-    #
-    #                o shoulder
-    #                  \
-    #                   o elbow
-    #                    \
-    #                     o wrist
-    #                      \
-    #                       o paw
-    #                        \
-    #                         o tow
-    #
-    #
-    # TAIL
-    #
-    #                o pelvis
-    #                  \
-    #                   o tail_1
-    #                    \
-    #                     o tail_2
-    #                      \
-    #                       o tail_3
-    #                        \
-    #                         o tail_4
-    #
-    #
-    # The left and right legs are mirror images in x.
-    #
-    # The skeleton represents the kinematic structure required for
-    # locomotion and animation, rather than every anatomical bone.
-    #
-    # ==================================================================
+    # ==============================================================
+    # Joints
+    # ==============================================================
 
+    # Spine: withers is the reference point for the dog: [0, 0, 0]
+    skeleton.add_joint("withers")
+    skeleton.add_joint("ribs")
+    skeleton.add_joint("lumbar")
+    skeleton.add_joint("pelvis")
 
-    # ==================================================================
-    # BODY PROPORTIONS
-    # ==================================================================
+    # Head / neck
+    skeleton.add_joint("axis")
+    skeleton.add_joint("head")
+    skeleton.add_joint("nose")
+    skeleton.add_joint("chin")
 
-    body_length = 720
-    body_height = 570
+    # Tail
+    for i in range(p["tail_segments"]):
+        skeleton.add_joint(f"tail_{i+1}")
 
-    withers_y = 0
+    # Left and right legs
+    for LorR in ['L', 'R']:
+        skeleton.add_joint("shoulder_"+LorR)
+        skeleton.add_joint("elbow_"+LorR)
+        skeleton.add_joint("wrist_"+LorR)
+        skeleton.add_joint("paw_front_"+LorR)
+        skeleton.add_joint("toe_front_"+LorR)
 
-    rib_fraction = 0.30
-    lumbar_fraction = 0.70
+        skeleton.add_joint("hip_"+LorR)
+        skeleton.add_joint("stifle_"+LorR)
+        skeleton.add_joint("hock_"+LorR)
+        skeleton.add_joint("paw_rear_"+LorR)
+        skeleton.add_joint("toe_rear_"+LorR)
 
-    pelvis_z_offset = -30
-    lumbar_z_offset = -60
-    rib_z_offset = -20
-
-    pelvis_y = withers_y - body_length
-    lumbar_y = withers_y - lumbar_fraction * body_length
-    rib_y = withers_y - rib_fraction * body_length
-
-    pelvis_z = body_height + pelvis_z_offset
-    lumbar_z = body_height + lumbar_z_offset
-    rib_z = body_height + rib_z_offset
-    withers_z = body_height
-
-
-    # ==================================================================
+    # ==============================================================
     # MAIN BODY / SPINE
-    # ==================================================================
+    # ==============================================================
+    length = p['length_to_pelvis']
 
-    withers = skeleton.add_joint("withers", [0, withers_y, withers_z])
-    ribbase = skeleton.add_joint("ribbase", [0, rib_y, rib_z])
-    lumbar = skeleton.add_joint("lumbar", [0, lumbar_y, lumbar_z])
-    pelvis = skeleton.add_joint("pelvis", [0, pelvis_y, pelvis_z])
+    rib_length = p['rib_fraction'] * length
+    lumbar_length = p['lumbar_fraction'] * length
+    pelvis_length = (1 - p['lumbar_fraction']) * length
 
-    skeleton.add_beam("thoracic", ribbase, withers, radius=85)
-    skeleton.add_beam("upper_lumbar", lumbar, ribbase, radius=85)
-    skeleton.add_beam("lower_lumbar", pelvis, lumbar, radius=85)
+    skeleton.add_bone("thoracic", "withers", "ribs", rib_length, radius=120)
+    skeleton.add_bone("upper_lumbar", "ribs", "lumbar", lumbar_length, radius=90)
+    skeleton.add_bone("lower_lumbar", "lumbar", "pelvis", pelvis_length, radius=70)
 
-
-    # ==================================================================
-    # PELVIS / HIPS
-    #
-    # Pelvis is the central body joint.
-    # Hip points are lateral attachment points for the rear legs.
-    # ==================================================================
-
-    hip_width = 180
-    hip_back = 90
-    hip_drop = 90      # drop defined + down
-
-    hip_L = skeleton.add_joint("hip_L", [-hip_width, pelvis_y - hip_back, pelvis_z - hip_drop])
-    hip_R = skeleton.add_joint("hip_R", [hip_width, pelvis_y - hip_back, pelvis_z - hip_drop])
-
-    skeleton.add_beam("pelvis_L", pelvis, hip_L, radius=60)
-    skeleton.add_beam("pelvis_R", pelvis, hip_R, radius=60)
-
-
-    # ==================================================================
-    # REAR LEGS
-    #
-    #     hip
-    #      \
-    #       o stifle
-    #        \
-    #         o hock
-    #          \
-    #           o paw
-    #            \
-    #             o tow
-    #
-    # upper_rear = femur
-    # lower_rear = tibia / fibula
-    # tarsal      = metatarsals
-    # paw_rear    = phalanges
-    # ==================================================================
-
-    rear_upper = 320
-    rear_lower = 200
-    rear_tarsal = 150
-    rear_paw = 80
-
-    rear_stifle_y = 170
-    rear_hock_y = -20
-    rear_paw_y = 50
-    rear_tow_y = 70
-
-    rear_tow_z = 35
-
-    def make_rear_leg(side, x):
-
-        hip = hip_L if side == "L" else hip_R
-
-        # --------------------------------------------------------------
-        # Stifle / knee
-        # --------------------------------------------------------------
-
-        stifle_y = pelvis_y + rear_stifle_y
-        stifle_dy = stifle_y - hip.position[1]
-        stifle_z = hip.position[2] - np.sqrt(rear_upper**2 - stifle_dy**2)
-
-        stifle = skeleton.add_joint(f"stifle_{side}", [x, stifle_y, stifle_z])
-
-        # --------------------------------------------------------------
-        # Hock
-        # --------------------------------------------------------------
-
-        hock_y = pelvis_y + rear_hock_y
-        hock_dy = hock_y - stifle_y
-        hock_z = stifle_z - np.sqrt(rear_lower**2 - hock_dy**2)
-
-        hock = skeleton.add_joint(f"hock_{side}", [x, hock_y, hock_z])
-
-        # --------------------------------------------------------------
-        # Paw (connection point)
-        #
-        # This is the proximal end of the paw/phalangeal structure.
-        # The paw -> tow beam represents the phalanges.
-        # --------------------------------------------------------------
-
-        paw_y = pelvis_y + rear_paw_y
-        paw_z = hock_z - np.sqrt(rear_tarsal**2 - (paw_y - hock_y)**2)
-
-        paw = skeleton.add_joint(f"paw_rear_{side}", [x, paw_y, paw_z])
-
-        # --------------------------------------------------------------
-        # Tow: Terminal skeletal point used as the foot/ground contact point.
-        # --------------------------------------------------------------
-        tow_y = pelvis_y + rear_tow_y
-        tow = skeleton.add_joint(f"tow_rear_{side}", [x, tow_y, rear_tow_z])
-
-        # --------------------------------------------------------------
-        # Connections
-        # --------------------------------------------------------------
-        skeleton.add_beam(f"upper_rear_{side}", hip   , stifle, radius=55)
-        skeleton.add_beam(f"lower_rear_{side}", stifle, hock  , radius=45)
-        skeleton.add_beam(f"tarsal_{side}"    , hock  , paw   , radius=40)
-        skeleton.add_beam(f"paw_rear_{side}"  , paw   , tow   , radius=35)
-
-
-    make_rear_leg("L", -hip_width)
-    make_rear_leg("R", hip_width)
-
-
-    # ==================================================================
-    # SHOULDERS
-    #
-    # The shoulder represents the effective scapular attachment point.
-    # ==================================================================
-
-    shoulder_width = 180
-    shoulder_back = 0      # minus, as want forward, but negative givs NAN...
-    shoulder_drop = 120
-
-    shoulder_L = skeleton.add_joint("shoulder_L", [-shoulder_width, withers_y - shoulder_back, withers_z - shoulder_drop])
-    shoulder_R = skeleton.add_joint("shoulder_R", [shoulder_width, withers_y - shoulder_back, withers_z - shoulder_drop])
-
-    skeleton.add_beam("scapula_L", withers, shoulder_L, radius=60)
-    skeleton.add_beam("scapula_R", withers, shoulder_R, radius=60)
-
-
-    # ==================================================================
-    # FRONT LEGS
-    #
-    #     shoulder
-    #        \
-    #         o elbow
-    #          \
-    #           o wrist
-    #            \
-    #             o paw
-    #              \
-    #               o tow
-    #
-    # upper_front = humerus
-    # lower_front = radius / ulna
-    # carpal      = metacarpals
-    # paw_front   = phalanges
-    # ==================================================================
-
-    front_upper = 300
-    front_lower = 300
-
-
-    front_carpal = 180
-    front_paw = 80
-
-    front_elbow_y = -260
-    front_wrist_y = -90
-    front_paw_y = 60
-    front_tow_y = 80
-    front_tow_z = 0    # on the ground
-
-
-
-    def make_front_leg(side, x):
-        shoulder = shoulder_L if side == "L" else shoulder_R
-
-        # --------------------------------------------------------------
-        # Elbow
-        # --------------------------------------------------------------
-        elbow_y = withers_y + front_elbow_y
-        elbow_dy = elbow_y - shoulder.position[1]
-        elbow_z = shoulder.position[2] - np.sqrt(front_upper**2 - elbow_dy**2)
-
-        elbow = skeleton.add_joint(f"elbow_{side}", [x, elbow_y, elbow_z])
-
-        # --------------------------------------------------------------
-        # Wrist
-        # --------------------------------------------------------------
-        wrist_y = withers_y + front_wrist_y
-        wrist_dy = wrist_y - elbow_y
-        wrist_z = elbow_z - np.sqrt(front_lower**2 - wrist_dy**2)
-
-        wrist = skeleton.add_joint(f"wrist_{side}", [x, wrist_y, wrist_z])
-
-        # --------------------------------------------------------------
-        # Paw
-        # --------------------------------------------------------------
-        paw_y = withers_y + front_paw_y
-        paw_z = wrist_z - np.sqrt(front_carpal**2 - (paw_y - wrist_y)**2)
-
-        paw = skeleton.add_joint(f"paw_front_{side}", [x, paw_y, paw_z])
-
-        # --------------------------------------------------------------
-        # Tow
-        # --------------------------------------------------------------
-        tow_y = withers_y + front_tow_y
-        tow = skeleton.add_joint(f"tow_front_{side}", [x, tow_y, front_tow_z])
-
-        # --------------------------------------------------------------
-        # Connections
-        # --------------------------------------------------------------
-
-        skeleton.add_beam(f"upper_front_{side}", shoulder, elbow, radius=50)
-        skeleton.add_beam(f"lower_front_{side}", elbow, wrist, radius=42)
-        skeleton.add_beam(f"carpal_{side}", wrist, paw, radius=38)
-        skeleton.add_beam(f"paw_front_{side}", paw, tow, radius=35)
-
-
-    make_front_leg("L", -shoulder_width)
-    make_front_leg("R", shoulder_width)
-
-
-    # ==================================================================
+    # ==============================================================
     # NECK / HEAD
-    #
-    #              o nose
-    #             /
-    #        o head
-    #       /    \
-    #      /      o chin
-    #     /
-    #    o axis
-    #    |
-    #    |
-    #    o withers
-    #
-    # There are only two neck/head connections:
-    #
-    #     withers -> axis
-    #     axis    -> head
-    #
-    # nose and chin are geometric endpoints rather than additional
-    # articulated joints.
-    # ==================================================================
+    # ==============================================================
+    skeleton.add_bone("neck_lower", "withers", "axis", p['neck_length'], radius=70)
+    skeleton.add_bone("neck_upper", "axis", "head", p['axis_length'], radius=50)
+    skeleton.add_bone("skull", "head", "nose", p['skull_length'], radius=55)
+    skeleton.add_bone("jaw", "head", "chin", p['jaw_length'], radius=35)
 
-    axis_y = 150
-    axis_z_offset = 100
-
-    head_y_offset = 150
-    head_z_offset = 130
-
-    nose_y_offset = 250
-    nose_z_offset = 100
-
-    chin_y_offset = 180
-    chin_z_offset = 60
-
-    axis = skeleton.add_joint("axis", [0, axis_y, body_height + axis_z_offset])
-
-    head = skeleton.add_joint("head", [0, axis_y + head_y_offset, body_height + head_z_offset])
-
-    nose = skeleton.add_joint("nose", [0, axis_y + head_y_offset + nose_y_offset, body_height + nose_z_offset])
-
-    chin = skeleton.add_joint("chin", [0, axis_y + head_y_offset + chin_y_offset, body_height + chin_z_offset])
-
-    skeleton.add_beam("neck_lower", withers, axis, radius=75)
-    skeleton.add_beam("neck_upper", axis, head, radius=70)
-    skeleton.add_beam("skull", head, nose, radius=55)
-    skeleton.add_beam("jaw", head, chin, radius=35)
-
-
-    # ==================================================================
+    # ==============================================================
     # TAIL
-    #
-    # The tail is an explicit chain so that future animation can apply
-    # progressively increasing rotations from the pelvis to the tip.
-    # ==================================================================
+    # ==============================================================
+    tail_length = p["tail_length"] / p["tail_segments"]
 
-    tail_length = 600
+    previous = "pelvis"
+    for i in range(p["tail_segments"]):
+        child = f"tail_{i+1}"
+        radius = 40 - 20 * i / p["tail_segments"]
+        skeleton.add_bone(f"tail_{i+1}", previous, child, tail_length, radius=radius)
+        previous = child
 
-    tail_1_fraction = 0.25
-    tail_2_fraction = 0.25
-    tail_3_fraction = 0.25
-    tail_4_fraction = 0.25
+    # ==============================================================
+    # FRONT/REAR LEGS
+    # ==============================================================
+    for LorR in ['L', 'R']:
+#        skeleton.add_bone("shoulder_"+LorR, "withers", "shoulder_"+LorR,  0.5*p['shoulder_width'], radius=45)
+#        skeleton.add_bone("humerours_"+LorR, "shoulder_"+LorR, "elbow_"+LorR, p['front_upper'], radius=45)
+        skeleton.add_bone("humerours_"+LorR, "shoulder_"+LorR, "elbow_"+LorR, p['front_upper'], radius=45)
+        skeleton.add_bone("forearm_"+LorR, "elbow_"+LorR, "wrist_"+LorR, p['front_lower'], radius=35)
+        skeleton.add_bone("carpal_"+LorR, "wrist_"+LorR, "paw_front_"+LorR, p['front_carpal'], radius=30)
+        skeleton.add_bone("front_paw_"+LorR, "paw_front_"+LorR, "toe_front_"+LorR, p['front_paw'], radius=25)
 
-    tail_1_z_offset = -100
-    tail_2_z_offset = -150
-    tail_3_z_offset = -100
-    tail_4_z_offset = -50
+        # Missig l/r pelvisis!
+#        skeleton.add_bone("pelvis_"+LorR, "pelvis", "hip_"+LorR, 0.5*p['hip_width'], radius=40)
+        skeleton.add_bone("femur_"+LorR, "hip_"+LorR, "stifle_"+LorR, p['rear_upper'], radius=50)
+        skeleton.add_bone("tibia_"+LorR, "stifle_"+LorR, "hock_"+LorR, p['rear_lower'], radius=40)
+        skeleton.add_bone("tarsal_"+LorR, "hock_"+LorR, "paw_rear_"+LorR, p['rear_tarsal'], radius=30)
+        skeleton.add_bone("rear_paw_"+LorR, "paw_rear_"+LorR, "toe_rear_"+LorR, p['rear_paw'], radius=25)
 
-    tail_1_y = pelvis_y - tail_length * tail_1_fraction
-    tail_2_y = tail_1_y - tail_length * tail_2_fraction
-    tail_3_y = tail_2_y - tail_length * tail_3_fraction
-    tail_4_y = tail_3_y - tail_length * tail_4_fraction
-
-    tail_1 = skeleton.add_joint("tail_1", [0, tail_1_y, pelvis_z + tail_1_z_offset])
-    tail_2 = skeleton.add_joint("tail_2", [0, tail_2_y, pelvis_z + tail_2_z_offset])
-    tail_3 = skeleton.add_joint("tail_3", [0, tail_3_y, pelvis_z + tail_3_z_offset])
-    tail_4 = skeleton.add_joint("tail_4", [0, tail_4_y, pelvis_z + tail_4_z_offset])
-
-    skeleton.add_beam("tail_base", pelvis, tail_1, radius=55)
-    skeleton.add_beam("tail_1", tail_1, tail_2, radius=48)
-    skeleton.add_beam("tail_2", tail_2, tail_3, radius=40)
-    skeleton.add_beam("tail_3", tail_3, tail_4, radius=30)
-
-
-    # ==================================================================
-    # CONVERT SKELETON -> RENDERABLE ELEMENT
-    # ==================================================================
-
+    # ==============================================================
     skeleton.print_graph()
-    dog = skeleton.to_element()
+
+
+    # ==============================================================
+    # DEFINE  poses
+
+    print('GENERATING POSE: stand')
+    pose_stand = create_pose("stand", skeleton, p)
+    pose_sit   = create_pose("sit", skeleton, p)
+#    dog = skeleton.to_element(pose_sit)
+    dog = skeleton.to_element(pose_stand)
 
     return dog
+
+
+def create_pose(pose_name, skeleton, p):
+
+    pose = Pose(skeleton, name=pose_name)
+
+    # --------------------------------------------------------------
+    # Select pose definition
+    # --------------------------------------------------------------
+    if pose_name not in p:
+        raise ValueError(f"Unknown pose: {pose_name}")
+
+    q = p[pose_name]
+
+    # Reference joint
+    pose.set_position("withers", [0.0, 0.0, 0.0])
+
+    # Neck and head (forwards/positive y)
+    pose.set_offset("withers", "axis", axis="z", value=q["axis_dz"], sign=+1)
+    pose.set_offset("axis"   , "head", axis="z", value=q["head_dz"], sign=+1)
+
+    pose.set_offset("head", "nose", axis="z", value=q["nose_dz"], sign=+1)
+    pose.set_offset("head", "chin", axis="z", value=q["chin_dz"], sign=+1)
+
+    # Spine (backwards/negative y)
+    pose.set_offset("withers", "ribs"   , axis="z", value=q["rib_dz"]   , sign=-1)
+    pose.set_offset("ribs"   , "lumbar" , axis="z", value=q["lumbar_dz"], sign=-1)
+    pose.set_offset("lumbar" , "pelvis" , axis="z", value=q["pelvis_dz"], sign=-1)
+
+    # Tail (backward from pelvis, in general)
+    previous = "pelvis"
+    for i, dz in enumerate(q["tail_dz"], start=1):
+        child = f"tail_{i}"
+        pose.set_offset(previous, child, axis="z", value=dz, sign=-1)
+        previous = child
+
+    # Shoulder attachment points
+    withers = pose.position("withers")
+
+    shoulder_width = p["shoulder_width"]
+    shoulder_back = p["shoulder_back"]
+    shoulder_drop = p["shoulder_drop"]
+
+    pose.set_position("shoulder_L", withers + [
+        -shoulder_width / 2,
+        shoulder_back,
+        -shoulder_drop
+    ])
+
+    pose.set_position("shoulder_R", withers + [
+         shoulder_width / 2,
+         shoulder_back,
+        -shoulder_drop
+    ])
+
+    # --------------------------------------------------------------
+    # Front legs
+    # --------------------------------------------------------------
+    for LorR in ["L", "R"]:      # down in z
+        pose.set_offset(f"shoulder_{LorR}", f"elbow_{LorR}",axis="y", value=q["front_elbow_dy"], sign=-1)
+        pose.set_offset(f"elbow_{LorR}", f"wrist_{LorR}",   axis="y", value=q["front_wrist_dy"], sign=-1)
+        pose.set_offset(f"wrist_{LorR}", f"paw_front_{LorR}",axis="y", value=q["front_paw_dy"], sign=-1)
+        pose.set_offset(f"paw_front_{LorR}", f"toe_front_{LorR}",axis="z", value=q["front_toe_dz"], sign=1) # fwd
+
+    # --------------------------------------------------------------
+    # Hip attachment points
+    # --------------------------------------------------------------
+    pelvis = pose.position("pelvis")
+
+    hip_width = p["hip_width"]
+    hip_back = p["hip_back"]
+    hip_drop = p["hip_drop"]
+
+    pose.set_position("hip_L", pelvis + [-hip_width/2, hip_back, -hip_drop])
+    pose.set_position("hip_R", pelvis + [ hip_width/2, hip_back, -hip_drop])
+
+    # --------------------------------------------------------------
+    # Rear legs
+    # --------------------------------------------------------------
+    for LorR in ["L", "R"]:
+        pose.set_offset(f"hip_{LorR}", f"stifle_{LorR}", axis="y", value=q["rear_stifle_dy"], sign=-1)
+        pose.set_offset(f"stifle_{LorR}", f"hock_{LorR}", axis="y", value=q["rear_hock_dy"], sign=-1)
+        pose.set_offset(f"hock_{LorR}", f"paw_rear_{LorR}", axis="y", value=q["rear_paw_dy"], sign=-1)
+        pose.set_offset(f"paw_rear_{LorR}", f"toe_rear_{LorR}", axis="z", value=q["rear_toe_dz"], sign=1) # fwd
+        
+    # Validate
+    pose.validate()
+
+    return pose

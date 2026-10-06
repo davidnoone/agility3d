@@ -50,7 +50,7 @@ def create_world(params):
 #    player = Element('player', geometry=primitives.cube(player_length), style=blue,)
     player = create_dog()
     player.name='player'
-    field.add(player, position=(5000,5000,100))
+    field.add(player, position=(8000,8000,2000))
 
 
     # World constructor

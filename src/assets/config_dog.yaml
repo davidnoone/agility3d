@@ -1,0 +1,111 @@
+# Parametric description of a dog
+dog:
+  skeleton:
+
+    # Overall anatomical dimensions
+    height_at_withers: 570
+    length_to_pelvis: 550
+    tail_length: 520
+    neck_length: 150
+    axis_length:  50
+    skull_length: 150     # cranium and maximus
+    jaw_length: 150
+
+    # Spine
+    rib_fraction: 0.60
+    lumbar_fraction: 0.70
+    tail_segments: 4
+
+    # Front limb geometry
+    shoulder_width: 180
+    shoulder_back: -60
+    shoulder_drop: 120
+
+    front_upper: 120       # humerus
+    front_lower: 180       # radius/ulna
+    front_carpal: 170      # metacarpal
+    front_paw: 40          # phalanges
+
+    # Rear limb geometry
+    hip_width: 180
+    hip_back: 90
+    hip_drop: 80
+
+    rear_upper: 210        # femur
+    rear_lower: 210        # tibia
+    rear_tarsal: 120       # metatarsal
+    rear_paw: 40           # phalanges
+
+
+    # posture dependent location of joints 
+    stand:
+      rib_dz: -30       # relative to withers
+      lumbar_dz: -10    # relatie to rib
+      pelvis_dz: +20    # relative to lumbar
+
+      axis_dz: 100      # relative to withers
+      head_dz:  20       # relative to axis
+
+      nose_dz: -60      # relatve to head
+      chin_dz: -100     # relative to head (check against jaw length)
+
+      tail_dz: [-100, -50, +0, +50] # ALL relative to pelvis 
+
+      # Front end
+      front_elbow_dy: -60   # relative to shoulder
+      front_wrist_dy: -00    # relative to elbow
+      front_paw_dy:  5      # reative to wrist
+      front_toe_dz: 20      # relative to paw  (NOTE: Z)
+
+      # Back end (defined backedward/netive)
+      rear_stifle_dy: 60   # relative to hip
+      rear_hock_dy  : -20   # relative to stifle
+      rear_paw_dy   : 70    # relative to hock
+      rear_toe_dz   : 20    # relative to paw (NOTE: Z)
+
+
+
+    sit:
+      rib_dz: -100       # relative to withers
+      lumbar_dz: -100    # relatie to rib
+      pelvis_dz: -100    # relative to lumbar
+
+      axis_dz: 100      # relative to withers
+      head_dz:  20       # relative to axis
+
+      nose_dz: -60      # relatve to head
+      chin_dz: -100     # relative to head (check against jaw length)
+
+      tail_dz: [0,0,0,0] # ALL relative to pelvis 
+
+      # Front end
+      front_elbow_dy: -60   # relative to shoulder
+      front_wrist_dy: -00    # relative to elbow
+      front_paw_dy:  5      # reative to wrist
+      front_toe_dz: 20      # relative to paw  (NOTE: Z)
+
+      # Back end (defined backedward/netive)
+      rear_stifle_dy: 100   # relative to hip
+      rear_hock_dy  : -20   # relative to stifle
+      rear_paw_dy   : 70    # relative to hock
+      rear_toe_dz   : 0    # relative to paw (NOTE: Z)
+
+    down:
+
+
+    # motion dependent pareters
+    walk:
+      stride: 600.
+      sway_front: 0       # rotation of shoulder (per step)
+      sway_back: 0        # rotation of hips (per step)
+      heave_front: 0      # up/down motion of shoulders
+      heave_back: 0       # up/down mottion of hips 
+
+
+
+
+
+
+
+
+

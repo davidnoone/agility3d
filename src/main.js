@@ -181,6 +181,7 @@ status.textContent = "Loading Python...";
 
 const pyodide = await loadPyodide();
 await pyodide.loadPackage("numpy")
+await pyodide.loadPackage("pyyaml")
 
 status.textContent = "Starting game...";
 
@@ -219,6 +220,17 @@ for (const file of pythonFiles) {
 
     pyodide.FS.writeFile(path, text);
 }
+const config_file="./assets/config_dog.yaml"
+const response = await fetch(config_file);
+if (!response.ok) {
+    throw new Error(`Failed to load ${config_file}`);
+}
+const yamlText = await response.text();
+
+pyodide.FS.mkdirTree("/game/assets");
+pyodide.FS.writeFile( "/game/assets/config_dog.yaml", yamlText);
+
+
 
 
 const pythonSource = `

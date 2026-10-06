@@ -47,11 +47,7 @@ class Game:
     def set_input( self, key_left=False, key_right=False, 
                     key_forward=False,  key_backward=False): 
 
-#        self.key_left = key_left
-#        self.key_right = key_right
-#        self.key_forward = key_forward
-#        self.key_backward = key_backward
-
+        # Change player speed based on key state (better in Behaviour?)
         speed = 2000.0       # mm/s
         turn_speed = 90.0    # degrees/s
 
@@ -60,14 +56,11 @@ class Game:
         self.player_motion.omega_z = 0.0
 
         if key_forward:
-            self.player_motion.u += speed
-
+            self.player_motion.v += speed           # Or "v". define, N or W as forward?
         if key_backward:
-            self.player_motion.u -= speed
-
+            self.player_motion.v -= speed
         if key_left:
             self.player_motion.omega_z += turn_speed
-
         if key_right:
             self.player_motion.omega_z -= turn_speed
 
@@ -75,7 +68,6 @@ class Game:
     def render_state(self):
         """ Returns a list of all objects that canbe passed to the renderer"""
         objects = []
-
         for object_id, (element, transform) in enumerate(self.world.walk()):
             if element.geometry is None:
                 continue
@@ -105,6 +97,7 @@ class Game:
         return objects
 
 
+#=======================================================
 if __name__ == "__main__":
     print("COMMAND LINE TEST EXECUTION")
     game = Game()

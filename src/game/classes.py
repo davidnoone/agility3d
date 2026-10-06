@@ -2,7 +2,8 @@ import numpy as np
 from dataclasses import dataclass, field
 from copy import copy
 
-from .translations import make_transform_matrix
+from .translations import make_transform_matrix, rotation_from_z_axis
+
 from . import serializer as serializer
 
 
@@ -232,6 +233,258 @@ class Element:
                 )
         _print(self)
 
+
+
+
+#===========================================================
+# Skeleton constructors
+class Joint:
+    """
+    A point in a skeleton/structure.
+
+    position is the rest position, expressed in the coordinate system
+    of the Skeleton.
+    """
+
+    def __init__(self, name, position):
+        self.name = name
+        self.rest_position = np.asarray(position, dtype=float)
+
+        # Current position is initially the rest position.
+        #
+        # Later this can be replaced by a pose/transform system.
+        self.position = self.rest_position.copy()
+
+        self.connections = []
+
+    def __repr__(self):
+        return f"Joint({self.name!r}, {self.position.tolist()})"
+
+
+# ----------------------------------------------------------------------
+# Connection
+# ----------------------------------------------------------------------
+
+class Connection:
+    """
+    Generic relationship between two joints.
+    """
+
+    def __init__(self, name, joint_a, joint_b):
+        self.name = name
+        self.joint_a = joint_a
+        self.joint_b = joint_b
+
+        joint_a.connections.append(self)
+        joint_b.connections.append(self)
+
+    @property
+    def vector(self):
+        return self.joint_b.position - self.joint_a.position
+
+    @property
+    def length(self):
+        return np.linalg.norm(self.vector)
+
+
+# ----------------------------------------------------------------------
+# Beam
+# ----------------------------------------------------------------------
+
+class Beam(Connection):
+    """
+    Rigid connection between two joints.
+
+    rest_length is retained explicitly because it will eventually be
+    useful for physics / IK / constraint solving.
+    """
+
+    def __init__(self, name, joint_a, joint_b, radius=0.04):
+        super().__init__(name, joint_a, joint_b)
+
+        self.rest_length = self.length
+        self.radius = radius
+
+    def __repr__(self):
+        return (
+            f"Beam({self.name!r}, "
+            f"{self.joint_a.name!r} -> {self.joint_b.name!r}, "
+            f"L={self.rest_length:.3f})"
+        )
+
+
+# ----------------------------------------------------------------------
+# Skeleton
+# ----------------------------------------------------------------------
+
+class Skeleton:
+    """
+    Graph of joints and connections.
+
+    The graph is deliberately independent of Element / rendering.
+    """
+
+    def __init__(self, name="skeleton"):
+        self.name = name
+
+        self.joints = {}
+        self.connections = []
+
+    # ------------------------------------------------------------------
+
+    def add_joint(self, name, position):
+        if name in self.joints:
+            raise ValueError(f"Joint already exists: {name}")
+
+        joint = Joint(name, position)
+        self.joints[name] = joint
+
+        return joint
+
+    # ------------------------------------------------------------------
+
+    def add_beam(self, name, joint_a, joint_b, radius=0.04):
+        """
+        joint_a and joint_b may either be Joint objects or joint names.
+        """
+
+        if isinstance(joint_a, str):
+            joint_a = self.joints[joint_a]
+
+        if isinstance(joint_b, str):
+            joint_b = self.joints[joint_b]
+
+        beam = Beam( name,joint_a,joint_b, radius=radius,)
+        self.connections.append(beam)
+
+        return beam
+
+    # ------------------------------------------------------------------
+
+    def add(self, connection):
+        self.connections.append(connection)
+        return connection
+
+    # ------------------------------------------------------------------
+
+    def print_graph(self):
+        print(f"Skeleton: {self.name}")
+        print()
+
+        print("Joints:")
+        for joint in self.joints.values():
+            p = joint.position
+            print(
+                f"  {joint.name:12s}"
+                f" [{p[0]:7.3f}, {p[1]:7.3f}, {p[2]:7.3f}]"
+            )
+
+        print()
+        print("Connections:")
+
+        for connection in self.connections:
+            print(
+                f"  {connection.name:16s}"
+                f" {connection.joint_a.name:12s}"
+                f" -> {connection.joint_b.name:12s}"
+                f"  L={connection.length:.3f}"
+            )
+
+    # ------------------------------------------------------------------
+
+    def to_element(self):
+        """
+        Convert the skeleton into a renderable Element hierarchy.
+        Every Beam becomes a cylinder between its two joints.
+        The returned Element represents the completeskeleton
+        coordinates.
+        """
+        new_elem = Element(self.name)
+        for beam in self.connections:
+            if not isinstance(beam, Beam):
+                continue
+
+            p0 = beam.joint_a.position
+            p1 = beam.joint_b.position
+
+            beam_elem = make_beam_element(
+                name=beam.name,
+                p0=p0,
+                p1=p1,
+                radius=beam.radius,
+            )
+
+            new_elem.add(beam_elem)
+
+        return new_elem
+
+#-----------
+#HELPERS - not cylinder should be primative constructor
+def cylinder_geometry(length, radius, n=12):
+    """
+    Make a cylinder of the specified length and radius.
+    The cylinder lies along +Z.
+    """
+
+    theta = np.linspace( 0.0,2.0 * np.pi, n,endpoint=False,)
+
+    circle = np.column_stack([
+        radius * np.cos(theta),
+        radius * np.sin(theta),
+        np.zeros(n),
+    ])
+
+    top = circle.copy()
+    top[:, 2] = length
+
+    points = np.vstack([circle, top,])
+
+    faces = []
+    # Bottom and Bottom
+    faces.append(np.arange(n - 1, -1, -1))
+    faces.append(np.arange(n, 2 * n))
+
+    # Sides
+    for i in range(n):
+        j = (i + 1) % n
+        faces.append([i,j,n + j,n + i,])
+
+    return Geometry(points, faces)
+
+
+
+def make_beam_element(name, p0, p1, radius):
+    """
+    Construct a cylindrical Element representing a Beam from p0 to p1.
+    """
+
+    p0 = np.asarray(p0, dtype=float)
+    p1 = np.asarray(p1, dtype=float)
+
+    vector = p1 - p0
+    length = np.linalg.norm(vector)
+
+    if length <= 1e-12:
+        raise ValueError(
+            f"Beam {name!r} has zero length"
+        )
+
+    geometry = cylinder_geometry(length=length, radius=radius,)
+    transform = rotation_from_z_axis(vector)
+    transform[:3, 3] = p0
+
+    style = Style(
+        face_color=(120, 90, 60),
+        edge_color=(30, 30, 30),
+        edge_width=1,
+    )
+
+    return Element(
+        name=name,
+        geometry=geometry,
+        transform=transform,
+        style=style,
+    )
 
 
 #===========================================================

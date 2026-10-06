@@ -57,8 +57,12 @@ camera.up.set(0, 0, 1);     // z is "up"
 
 // Position in geometry of the "world", which carries units in mm
 camera.position.set(10000, 20000, 2000);
-
 camera.lookAt(0, 0, 0);
+
+// Top down
+//camera.position.set(20000, 20000, 50000);
+//camera.lookAt(10000, 20000, 0);
+
 
 
 // Map from Python render ID to Three.js object.
@@ -126,7 +130,6 @@ function updateRenderObjects(objects) {
     const activeIds = new Set();
 
     for (const object of objects) {
-
         const id = object[0];
         const geometry = object[1];
         const transform = object[2];
@@ -134,50 +137,22 @@ function updateRenderObjects(objects) {
 
         activeIds.add(id);
 
-
         let renderObject = renderObjects.get(id);
-
-
         if (!renderObject) {
-
-            renderObject = createRenderObject(
-                geometry,
-                style
-            );
-
+            renderObject = createRenderObject(geometry,style);
             renderObjects.set(id, renderObject);
-
             scene.add(renderObject);
         }
 
-
         // The transform is a 4x4 matrix.
-        //
         // Pyodide converts the numpy array into a JS array-like
         // object, so copy the values into a THREE.Matrix4.
-
         const matrix = new THREE.Matrix4();
-
         matrix.set(
-            transform[0][0],
-            transform[0][1],
-            transform[0][2],
-            transform[0][3],
-
-            transform[1][0],
-            transform[1][1],
-            transform[1][2],
-            transform[1][3],
-
-            transform[2][0],
-            transform[2][1],
-            transform[2][2],
-            transform[2][3],
-
-            transform[3][0],
-            transform[3][1],
-            transform[3][2],
-            transform[3][3]
+            transform[0][0], transform[0][1], transform[0][2], transform[0][3],
+            transform[1][0], transform[1][1], transform[1][2], transform[1][3],
+            transform[2][0], transform[2][1], transform[2][2], transform[2][3],
+            transform[3][0], transform[3][1], transform[3][2], transform[3][3]
         );
 
         renderObject.matrixAutoUpdate = false;
@@ -188,11 +163,8 @@ function updateRenderObjects(objects) {
         renderObject.visible = style.visible;
     }
 
-
     // Remove objects which no longer exist in Python.
-
     for (const [id, renderObject] of renderObjects) {
-
         if (!activeIds.has(id)) {
             scene.remove(renderObject);
             renderObject.geometry.dispose();
@@ -212,10 +184,7 @@ await pyodide.loadPackage("numpy")
 
 status.textContent = "Starting game...";
 
-
 pyodide.FS.mkdir("/game");
-
-
 const pythonFiles = [
     "game/__init__.py",
     "game/game.py",
@@ -227,13 +196,13 @@ const pythonFiles = [
     "game/serializer.py",
     "game/classes.py",
     "game/primitives.py",
-    "game/creation.py"
+    "game/creation.py",
+    "game/create_dog.py"
 ];
 
 
 for (const file of pythonFiles) {
     const response = await fetch(file);
-
     if (!response.ok) {
         throw new Error(`Failed to load ${file}`);
     }
@@ -266,9 +235,7 @@ const game = pyodide.globals.get("game");
 
 status.textContent = "Running";
 
-
 let previousTime = performance.now();
-
 function frame(time) {
     // Update/time-step state
     const frameDt = (time - previousTime) / 1000;
@@ -284,21 +251,21 @@ function frame(time) {
     // Update the simulation state
     game.update(dtstep);
 
+    // Update the camera position (e.g., to player if 1st person)
+    //updateCamera();
+
     // Get the objects and render them
     const objects = game.render_state().toJs();
 
     updateRenderObjects(objects);
     renderer.render( scene, camera);
-    requestAnimationFrame(frame);
+    requestAnimationFrame(frame); // recursive call to next frame
 }
 
-requestAnimationFrame(frame);
-
-
+requestAnimationFrame(frame);  // first frame
 
 
 //-------------------------------------
-
 window.addEventListener("keydown", (event) => {
     const key = event.key.toLowerCase();
     if (key in keys) {

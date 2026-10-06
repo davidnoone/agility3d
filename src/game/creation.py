@@ -4,6 +4,8 @@
 from .classes import Element, Style
 from . import primitives 
 
+from .create_dog import create_dog
+
 
 # Some colors/styles for elements
 # (GLOBAL - which is a bit hacky....fix with yaml/config later)
@@ -33,14 +35,23 @@ def create_world(params):
     g = primitives.geom2d(primitives.points_rectangle,x=field_length, y=field_width)
     field = Element('field',geometry=g)
 
-    # A table
+    # A table: 
     table = create_table(params["table"])
-    field.add(table)
+    field.add(table,position=(2000,2000,0))
     #
+
+    # A dog from skeleton constructor
+    dog = create_dog()
+    field.add(dog, position=(6000,6000,1000),)
+
+
+    # Make a player
     player_length = 1000
-    player_pos = (5000,5000,100)
-    player = Element('player', geometry=primitives.cube(player_length), style=blue,)
-    field.add(player, position=player_pos,)
+#    player = Element('player', geometry=primitives.cube(player_length), style=blue,)
+    player = create_dog()
+    player.name='player'
+    field.add(player, position=(5000,5000,100))
+
 
     # World constructor
     world = Element('world')

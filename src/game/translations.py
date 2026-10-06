@@ -46,6 +46,69 @@ def rotation_from_euler_angles(angles_deg):
 
 
 
+def rotation_from_z_axis(vector):
+    """
+    Return a 4x4 transform that rotates the +Z axis onto vector.
+
+    The cylinder geometry is defined along +Z, so this gives the
+    orientation needed for a beam.
+
+    The rotation is purely geometric; no translation is included.
+    """
+
+    v = np.asarray(vector, dtype=float)
+
+    length = np.linalg.norm(v)
+
+    if length == 0:
+        raise ValueError("Cannot orient a zero-length beam")
+
+    v = v / length
+
+    z = np.array([0.0, 0.0, 1.0])
+
+    # Already aligned.
+    if np.allclose(v, z):
+        return np.eye(4)
+
+    # Exactly opposite.
+    if np.allclose(v, -z):
+        R = np.array([
+            [1.0,  0.0,  0.0],
+            [0.0, -1.0,  0.0],
+            [0.0,  0.0, -1.0],
+        ])
+
+        T = np.eye(4)
+        T[:3, :3] = R
+        return T
+
+    # Rotation taking z -> v.
+    axis = np.cross(z, v)
+    axis /= np.linalg.norm(axis)
+
+    cos_angle = np.dot(z, v)
+    sin_angle = np.linalg.norm(np.cross(z, v))
+
+    # Rodrigues rotation matrix.
+    x, y, z_axis = axis
+
+    K = np.array([
+        [0.0,    -z_axis,  y],
+        [z_axis,  0.0,    -x],
+        [-y,      x,       0.0],
+    ])
+
+    R = (
+        np.eye(3)
+        + K * sin_angle
+        + K @ K * (1.0 - cos_angle)
+    )
+
+    T = np.eye(4)
+    T[:3, :3] = R
+
+    return T
 
 def make_transform_matrix(position=None, orientation=None):
     """
